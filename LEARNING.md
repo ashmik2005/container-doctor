@@ -74,3 +74,90 @@ this, because it can't type a sudo password.
    Storing weights in fewer bits (4 instead of 16). It's about 4× less memory
    and faster on CPU because inference is memory-bandwidth bound. The cost is
    a small accuracy drop, and it hurts small models relatively more.
+
+---
+
+## Stage 1: Minimal agent (2 tools)
+
+### What we built
+- `tools.py`: `list_containers()` and `get_logs(container, tail)`, both thin
+  wrappers around `docker` CLI commands, plus `TOOLS` (name → function) and
+  `TOOL_SCHEMAS` (JSON descriptions the model reads).
+- `agent.py`: the agent loop, which prints every message so you can see the flow.
+- `scenarios/01_missing_env_var/`: a container that crashes because
+  `DATABASE_URL` is not set.
+
+### How tool calling works under the hood
+The model cannot run anything. It only produces text. "Tool calling" is a
+convention between us and the model:
+
+1. **We describe tools** in the request (`tools=TOOL_SCHEMAS`). Ollama inserts
+   these JSON schemas into the prompt using the model's chat template. Qwen2.5
+   was fine-tuned on examples where, given such schemas, it answers with a
+   special block like `<tool_call>{"name": "get_logs", "arguments": {...}}</tool_call>`.
+2. **Ollama parses** that block out of the generated text and returns it as
+   structured data instead of plain content:
+   ```json
+   {"role": "assistant", "content": "",
+    "tool_calls": [{"function": {"name": "get_logs",
+                                 "arguments": {"container": "web"}}}]}
+   ```
+3. **Our code executes it**: look up `TOOLS["get_logs"]`, call it with the
+   arguments, get a string.
+4. **We append the result** as a message with `role: "tool"` and call the model
+   again with the whole history. The model now "sees" the logs and continues.
+5. **Stop condition**: when a reply contains no `tool_calls`, it is the final answer.
+
+That loop (model → tool calls → results → model …) **is** the agent. Frameworks
+like LangChain wrap exactly this.
+
+### Real transcript (scenario 01, 17 s on CPU)
+```
+SYSTEM    You are Container Doctor ... (instructions + answer format)
+USER      My web app is down. What is wrong?
+ASSISTANT [tool call] list_containers({})
+TOOL      web  python:3.12-alpine  Exited (1) 2 minutes ago
+ASSISTANT The web container is the one that's not working ...
+          [tool call] get_logs({"container": "web"})
+TOOL      Traceback ... KeyError: 'DATABASE_URL'
+ASSISTANT ROOT CAUSE: ... unable to locate the 'DATABASE_URL' environment variable ...
+          FIX: add it under environment: in docker compose ...
+```
+
+### Key concepts
+- **The message list is the agent's only memory.** The model is stateless. Every
+  call sends the full history again, which is why long tool outputs are a
+  problem (context window) and why we truncate them in Stage 2.
+- **Roles:** `system` (standing instructions), `user` (the question),
+  `assistant` (model output, possibly with `tool_calls`), `tool` (results we feed back).
+- **`temperature: 0`:** always pick the most likely next token. Makes runs
+  repeatable, which we need for evaluation.
+- **`subprocess.run([...])` with a list:** no shell is started, so a malicious
+  argument like `web; rm -rf /` is just a strange container name, not a second command.
+
+### Design decisions
+| Decision | Why | Alternative considered |
+|---|---|---|
+| Hand-written loop, no framework | Every step is visible and explainable; it's about 40 lines | LangChain/LangGraph agents (hide the loop) |
+| Explicit JSON schemas for tools | I control exactly what the model reads; descriptions double as prompting | The ollama lib can build schemas from Python docstrings (less control) |
+| Tools return strings | The model only reads text; errors are also returned as text so the model can react | Return dicts and JSON-encode them |
+| Shell out to the `docker` CLI | Output looks exactly like what a human sees and what's in runbooks; no extra dependency | `docker` Python SDK (structured objects, extra dependency) |
+| Fixed answer format (ROOT CAUSE / EVIDENCE / FIX) | Forces the model to cite evidence and makes eval scoring easier | Free-form answer |
+| `MAX_STEPS = 10` already in Stage 1 | A small model can loop forever calling tools | No limit |
+
+### Interview questions
+1. **"Walk me through what happens when the model 'calls a tool'."**
+   The model only generates text. Because it was fine-tuned on tool-call
+   examples and we put JSON schemas in the prompt, it outputs a structured tool
+   call. Ollama parses it into `tool_calls`. My loop looks up the Python
+   function, runs it, appends the output as a `tool` message and calls the
+   model again. The loop ends when the model replies without tool calls.
+2. **"How does the agent remember what it already did?"**
+   It doesn't. The model is stateless. I resend the entire message list every
+   step, so memory equals the context window. That's why I truncate tool output
+   and cap the number of steps.
+3. **"Why not just put the logs in the prompt instead of building an agent?"**
+   You don't know in advance which container or which information is needed.
+   The agent chooses (list containers, then logs of the failing one, then
+   inspect if logs are empty). For one fixed check, a plain script would be
+   simpler and better.

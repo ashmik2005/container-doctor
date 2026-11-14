@@ -1,0 +1,16 @@
+# Broken on purpose: the app requires DATABASE_URL but compose never sets it.
+services:
+  web:
+    image: python:3.12-alpine
+    container_name: web
+    # A tiny "web app" that reads its config from the environment at startup.
+    command:
+      - python
+      - -c
+      - |
+        import os
+        print("Starting web app...")
+        db_url = os.environ["DATABASE_URL"]
+        print("Connecting to", db_url)
+    # environment:
+    #   DATABASE_URL: postgres://app:secret@db:5432/app   <- the missing line
