@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# ChromaDB persistent store (rebuilt by `python rag.py`)
+chroma_db/
+
+# Eval run logs (results table is committed, raw transcripts are not)
+eval_logs/
