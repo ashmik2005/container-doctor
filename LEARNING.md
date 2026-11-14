@@ -161,3 +161,93 @@ ASSISTANT ROOT CAUSE: ... unable to locate the 'DATABASE_URL' environment variab
    The agent chooses (list containers, then logs of the failing one, then
    inspect if logs are empty). For one fixed check, a plain script would be
    simpler and better.
+
+---
+
+## Stage 2: More tools and safety
+
+### What we built
+- New tools: `inspect_container` (a summarised `docker inspect`), `check_port`
+  (who publishes the port, is anything listening, what does a TCP/HTTP probe
+  return), `check_disk` (`df -h /` + `docker system df`), and
+  `restart_container` (an action that needs approval).
+- Safety in `tools.py`: a command allowlist inside `_run()`, a container-name
+  regex, secret masking in env vars, `logs --tail` clamped to 200.
+- Safety in `agent.py`: validation of unknown tools and bad arguments,
+  human approval for actions, `MAX_STEPS`, output truncation, a repeated-call
+  guard, an evidence guard, and an explicit `num_ctx`.
+- `test_safety.py`: 6 offline tests of the safety layer.
+- `scenarios/02_oom_killed/`: a container killed by a 20 MiB memory limit (exit 137).
+
+### Safety layers (defense in depth)
+Each layer assumes the others might fail:
+1. **The model only picks from tools we wrote.** It can't run arbitrary
+   commands. A tool's command prefix is fixed in our code; the model only fills
+   in arguments.
+2. **Arguments are validated.** Unknown tool → error listing the real tools.
+   Missing argument → error. Made-up extra arguments are dropped. Container
+   names must match Docker's naming rule `^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`, which
+   also blocks *option injection* (`container="--follow"` would make
+   `docker logs` hang forever).
+3. **Allowlist in `_run()`.** Even a buggy tool can't run `docker rm`; only
+   listed read-only prefixes are allowed. `docker restart` needs `allow_actions=True`.
+4. **No shell.** `subprocess.run([...])` with a list, never `shell=True`, so
+   `;`, `&&`, `$( )` mean nothing.
+5. **Human approval** for anything that changes state (`NEEDS_APPROVAL`). The
+   `approve` function is a parameter: the terminal asks y/n, and `eval.py`
+   passes a function that always says no.
+6. **Errors become messages, never crashes.** `execute_tool_call` returns
+   `ERROR: ...` text. The model reads it in the next step and can correct itself.
+
+### Context window management
+- **Truncation:** tool output over 3000 chars keeps the first 25% and the last
+  75%, with a `[N characters truncated]` marker. Logs put the fatal error at the end.
+- **`num_ctx = 8192`:** Ollama's default context window is small. When the
+  prompt is longer, Ollama **silently drops the oldest tokens**, including the
+  system prompt, so the agent "forgets" its instructions with no error. Setting
+  it explicitly avoids that surprise.
+- **Summarised inspect:** raw `docker inspect` is ~250 lines; we send ~40.
+
+### Lessons from testing (real observations)
+- On the OOM scenario the model first answered right after `list_containers`
+  ("exit 137 → probably memory"). The guess was right, but there was no
+  evidence. Adding "never answer from the container list alone" to the
+  **prompt did not help** (it still did it). So the rule moved into **code**:
+  the *evidence guard* sends one nudge if the model tries to answer before
+  using `get_logs`/`inspect_container`. **Lesson: with small models, enforce
+  important rules in the loop, not in the prompt.**
+- **`temperature: 0` is not full determinism for an agent:** tool output
+  contains times ("Exited 38 seconds ago" vs "About a minute ago"). Different
+  input tokens → different generation. Two runs on the same scenario took
+  different paths.
+
+### Design decisions
+| Decision | Why | Alternative considered |
+|---|---|---|
+| Allowlist of command prefixes | Simple, explicit, easy to audit | Denylist (`rm`, `kill`…): you always forget something |
+| Approval via an injectable `approve` function | Same loop works interactively and in automated eval | Hard-coded `input()` (would block eval) |
+| Return errors to the model as text | The model can self-correct; the agent never crashes | Raise exceptions (one bad call kills the run) |
+| Drop unknown args, error on missing ones | Small models add junk args often; missing args can't be guessed | Reject on any mismatch (too strict for a 3B model) |
+| Truncate head 25% + tail 75% | Errors are usually at the end of logs | Keep only the head (loses the error) |
+| Summarise `docker inspect` in Python | Saves ~85% of tokens, removes distractions | Send raw JSON |
+| Mask secret-looking env values | Logs/env often contain passwords; the model doesn't need the value to diagnose | Send everything (fine locally, bad habit) |
+| Evidence guard in code (one nudge) | The prompt rule was ignored by the 3B model | Bigger model; stronger prompt (tried, failed) |
+| Repeated-call guard | Small models re-call the same tool in loops | Rely only on MAX_STEPS |
+| On step limit: one final call with `tools=None` | Always produces an answer instead of nothing | Return "gave up" |
+
+### Interview questions
+1. **"How do you stop the agent from doing something destructive?"**
+   Defense in depth. The model can only pick tools I wrote. Arguments are
+   validated (name regex blocks injection). `_run()` has an allowlist of
+   read-only command prefixes. No `shell=True`. Any state-changing tool needs
+   human approval. The approval function is injectable, so eval auto-denies.
+2. **"What happens if the model calls a tool that doesn't exist?"**
+   `execute_tool_call` returns `ERROR: unknown tool 'x'. Available tools: ...`
+   as the tool result. The model sees it in the next step and usually picks a
+   real tool. Same for bad arguments. The agent never crashes on model mistakes.
+3. **"What is the context window and how do you manage it?"**
+   It's the maximum number of tokens the model sees at once: system prompt +
+   all messages. The agent resends everything every step, so it grows. I set
+   `num_ctx=8192` explicitly (Ollama silently drops the oldest tokens when
+   over the limit), truncate tool output to 3000 chars keeping the tail,
+   summarise `docker inspect`, and cap steps at 8.

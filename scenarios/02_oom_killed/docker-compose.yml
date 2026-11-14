@@ -1,0 +1,16 @@
+# Broken on purpose: a 20 MiB memory limit for a job that needs ~200 MiB.
+services:
+  worker:
+    image: python:3.12-alpine
+    container_name: worker
+    mem_limit: 20m
+    memswap_limit: 20m   # no swap either, so the kernel OOM killer steps in
+    command:
+      - python
+      - -c
+      - |
+        print("Loading dataset into memory...", flush=True)
+        data = []
+        for i in range(200):
+            data.append(bytearray(1024 * 1024))  # 1 MiB per step
+        print("Done")
