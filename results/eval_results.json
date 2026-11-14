@@ -4,11 +4,11 @@
     "mode": "no_rag",
     "correct": true,
     "groups_matched": "2/2",
-    "steps": 5,
-    "tool_calls": 3,
+    "steps": 4,
+    "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 43.2,
+    "seconds": 15.3,
     "error": null
   },
   {
@@ -16,23 +16,23 @@
     "mode": "rag",
     "correct": true,
     "groups_matched": "2/2",
-    "steps": 7,
-    "tool_calls": 4,
+    "steps": 9,
+    "tool_calls": 6,
     "used_runbooks": true,
-    "nudges": 2,
-    "seconds": 129.2,
+    "nudges": 3,
+    "seconds": 175.8,
     "error": null
   },
   {
     "scenario": "02_oom_killed",
     "mode": "no_rag",
-    "correct": true,
-    "groups_matched": "2/2",
+    "correct": false,
+    "groups_matched": "0/2",
     "steps": 4,
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 19.0,
+    "seconds": 13.5,
     "error": null
   },
   {
@@ -40,23 +40,23 @@
     "mode": "rag",
     "correct": true,
     "groups_matched": "2/2",
-    "steps": 7,
-    "tool_calls": 4,
+    "steps": 9,
+    "tool_calls": 7,
     "used_runbooks": true,
     "nudges": 2,
-    "seconds": 102.4,
+    "seconds": 182.8,
     "error": null
   },
   {
     "scenario": "03_port_conflict",
     "mode": "no_rag",
     "correct": false,
-    "groups_matched": "0/2",
+    "groups_matched": "1/2",
     "steps": 5,
     "tool_calls": 3,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 66.8,
+    "seconds": 63.6,
     "error": null
   },
   {
@@ -64,11 +64,11 @@
     "mode": "rag",
     "correct": true,
     "groups_matched": "2/2",
-    "steps": 9,
-    "tool_calls": 8,
-    "used_runbooks": false,
-    "nudges": 1,
-    "seconds": 134.9,
+    "steps": 8,
+    "tool_calls": 5,
+    "used_runbooks": true,
+    "nudges": 2,
+    "seconds": 85.1,
     "error": null
   },
   {
@@ -76,11 +76,11 @@
     "mode": "no_rag",
     "correct": false,
     "groups_matched": "1/2",
-    "steps": 6,
-    "tool_calls": 4,
+    "steps": 7,
+    "tool_calls": 5,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 74.0,
+    "seconds": 111.8,
     "error": null
   },
   {
@@ -92,7 +92,7 @@
     "tool_calls": 3,
     "used_runbooks": true,
     "nudges": 3,
-    "seconds": 119.7,
+    "seconds": 120.6,
     "error": null
   },
   {
@@ -104,7 +104,7 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 0,
-    "seconds": 16.4,
+    "seconds": 16.1,
     "error": null
   },
   {
@@ -112,11 +112,11 @@
     "mode": "rag",
     "correct": true,
     "groups_matched": "2/2",
-    "steps": 8,
-    "tool_calls": 5,
+    "steps": 9,
+    "tool_calls": 7,
     "used_runbooks": true,
     "nudges": 2,
-    "seconds": 165.5,
+    "seconds": 136.8,
     "error": null
   },
   {
@@ -128,19 +128,19 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 18.4,
+    "seconds": 18.5,
     "error": null
   },
   {
     "scenario": "06_permission_denied",
     "mode": "rag",
-    "correct": true,
-    "groups_matched": "2/2",
+    "correct": false,
+    "groups_matched": "1/2",
     "steps": 8,
     "tool_calls": 5,
     "used_runbooks": true,
     "nudges": 2,
-    "seconds": 154.8,
+    "seconds": 121.0,
     "error": null
   },
   {
@@ -164,7 +164,7 @@
     "tool_calls": 6,
     "used_runbooks": true,
     "nudges": 3,
-    "seconds": 196.9,
+    "seconds": 156.8,
     "error": null
   },
   {
@@ -176,7 +176,7 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 0,
-    "seconds": 26.5,
+    "seconds": 49.1,
     "error": null
   },
   {
@@ -188,7 +188,7 @@
     "tool_calls": 4,
     "used_runbooks": true,
     "nudges": 3,
-    "seconds": 135.2,
+    "seconds": 134.6,
     "error": null
   },
   {
@@ -200,7 +200,7 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 33.7,
+    "seconds": 35.4,
     "error": null
   },
   {
@@ -208,11 +208,11 @@
     "mode": "rag",
     "correct": false,
     "groups_matched": "1/3",
-    "steps": 9,
-    "tool_calls": 6,
+    "steps": 5,
+    "tool_calls": 3,
     "used_runbooks": true,
-    "nudges": 3,
-    "seconds": 145.2,
+    "nudges": 1,
+    "seconds": 108.9,
     "error": null
   },
   {
@@ -224,7 +224,7 @@
     "tool_calls": 3,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 99.8,
+    "seconds": 92.4,
     "error": null
   },
   {
@@ -236,7 +236,7 @@
     "tool_calls": 3,
     "used_runbooks": true,
     "nudges": 3,
-    "seconds": 94.6,
+    "seconds": 90.9,
     "error": null
   },
   {
@@ -244,23 +244,23 @@
     "mode": "no_rag",
     "correct": true,
     "groups_matched": "2/2",
-    "steps": 4,
-    "tool_calls": 3,
+    "steps": 6,
+    "tool_calls": 5,
     "used_runbooks": false,
     "nudges": 0,
-    "seconds": 26.1,
+    "seconds": 53.0,
     "error": null
   },
   {
     "scenario": "11_nginx_config_error",
     "mode": "rag",
-    "correct": false,
-    "groups_matched": "0/2",
-    "steps": 9,
-    "tool_calls": 7,
+    "correct": true,
+    "groups_matched": "2/2",
+    "steps": 7,
+    "tool_calls": 3,
     "used_runbooks": true,
-    "nudges": 2,
-    "seconds": 163.6,
+    "nudges": 3,
+    "seconds": 68.1,
     "error": null
   },
   {
@@ -272,7 +272,7 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 25.6,
+    "seconds": 25.3,
     "error": null
   },
   {
@@ -284,7 +284,7 @@
     "tool_calls": 6,
     "used_runbooks": true,
     "nudges": 3,
-    "seconds": 161.4,
+    "seconds": 125.0,
     "error": null
   },
   {
@@ -296,19 +296,19 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 17.5,
+    "seconds": 18.1,
     "error": null
   },
   {
     "scenario": "13_wrong_db_password",
     "mode": "rag",
-    "correct": false,
-    "groups_matched": "0/2",
-    "steps": 6,
-    "tool_calls": 2,
-    "used_runbooks": false,
-    "nudges": 3,
-    "seconds": 27.6,
+    "correct": true,
+    "groups_matched": "2/2",
+    "steps": 7,
+    "tool_calls": 5,
+    "used_runbooks": true,
+    "nudges": 1,
+    "seconds": 79.0,
     "error": null
   },
   {
@@ -320,19 +320,19 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 0,
-    "seconds": 20.8,
+    "seconds": 20.6,
     "error": null
   },
   {
     "scenario": "14_disk_full",
     "mode": "rag",
-    "correct": true,
-    "groups_matched": "2/2",
-    "steps": 6,
-    "tool_calls": 3,
+    "correct": false,
+    "groups_matched": "1/2",
+    "steps": 9,
+    "tool_calls": 7,
     "used_runbooks": true,
     "nudges": 2,
-    "seconds": 99.5,
+    "seconds": 200.6,
     "error": null
   },
   {
@@ -344,7 +344,7 @@
     "tool_calls": 2,
     "used_runbooks": false,
     "nudges": 1,
-    "seconds": 25.3,
+    "seconds": 24.2,
     "error": null
   },
   {
@@ -352,11 +352,11 @@
     "mode": "rag",
     "correct": true,
     "groups_matched": "2/2",
-    "steps": 6,
-    "tool_calls": 4,
+    "steps": 8,
+    "tool_calls": 5,
     "used_runbooks": true,
-    "nudges": 1,
-    "seconds": 138.8,
+    "nudges": 2,
+    "seconds": 106.8,
     "error": null
   }
 ]

@@ -528,3 +528,85 @@ in `no_rag`). Nudges: 11 in total in `no_rag`, 35 in `rag`.
   `ROOT CAUSE` as a fallback.
 - **Fixes are often poor** even when the root cause is right: restart
   suggestions, a backwards mount fix, `apk add requests`.
+
+### Run v2 (after the fix): the headline results
+| Mode | Correct (keywords) | Avg steps | Avg seconds | Searched runbooks | Hit step limit |
+|---|---|---|---|---|---|
+| no_rag | 8/15 | 4.3 | 38 | 0/15 | 0/15 |
+| rag | 12/15 | 7.9 | 126 | 15/15 | 6/15 |
+
+Measured facts from comparing v1 and v2 (`results/*.json`):
+- **The fallback fix fired in 2 v2 runs** (08 rag, 11 rag), and both scored
+  correct. It did **not** fire in 13 rag. That run was correct in v2 because
+  the model behaved differently, not because of the fix. Don't claim the
+  fix "fixed scenario 13".
+- **Stability:** no_rag gave the same result in 14/15 scenarios across runs,
+  rag in only 11/15. Longer runs have more places to diverge.
+- **Correct in both runs:** no_rag 8/15, rag 10/15. That's the most
+  conservative comparison.
+
+### The retrieval failure (an interview gold story)
+Whenever `exits_immediately.md` was the top search result, the answer was
+wrong (2/2). In both runs the model searched for `"Exited (1)"`, the container
+*status*, not the error message. Embeddings capture meaning, not exact
+tokens: "Exited (1)" and "Exited (0)" are almost the same vector, so the
+runbook about clean exit-0 shutdowns ranked first, and the model trusted it.
+- Fix ideas (not applied, so the test set doesn't leak into the design):
+  **hybrid search** (BM25 keyword score + vector score) so exact tokens like
+  `(1)`, `137`, `ENOSPC` count; or have `search_runbooks` reject
+  status-only queries and ask for the error line.
+- Lesson: **RAG adds noise as well as knowledge.** It needs its own
+  evaluation (`eval_retrieval.py`) *and* end-to-end evaluation, because good
+  retrieval on my hand-written queries didn't predict the model's own bad queries.
+
+### Interview questions
+1. **"How did you evaluate the agent, and what are the weaknesses?"**
+   15 scenarios with known root causes, each run with and without the runbook
+   tool, scored by keyword groups that must all match. v2: 8/15 without RAG,
+   12/15 with. Weaknesses: keyword scoring is generous (a hand audit found
+   symptom-restating answers counted as correct), the sample is tiny, results
+   flip between runs, and I wrote the scenarios, runbooks and keywords myself.
+2. **"Did RAG help?"**
+   Yes, on this benchmark: 12 vs 8 in v2, 12 vs 9 in v1. It helped most where
+   the error message doesn't name the cause (startup race, mount path, DNS,
+   bind address: rag was right in both runs, no_rag wrong in both). It cost
+   ~3.3× wall time and misled the model twice when it searched with a status
+   instead of an error message.
+3. **"Why did you run the evaluation twice?"**
+   v1 revealed a loop bug, so I fixed it and re-ran everything instead of
+   patching one number. Keeping v1 also measured run-to-run variance, which
+   turned out to be large for the RAG mode (4 of 15 flipped).
+
+---
+
+## Stage 6: Polish
+
+### What we built
+- `README.md`: overview, a real (condensed) run from the eval, mermaid
+  architecture diagram, setup, usage, safety summary, RAG summary with the
+  chunking table, eval results generated from `results/*.json`, and limitations.
+- The Streamlit UI was skipped (deadline). If asked: "`run_agent` already
+  returns the full message list and takes a `verbose` flag, so a UI would
+  just render the messages; the loop doesn't change."
+
+### Design decisions
+| Decision | Why | Alternative considered |
+|---|---|---|
+| README tables generated from result JSON, not typed | No transcription errors; every number is traceable to `eval.py` | Hand-written table |
+| Real transcript as the README example | Shows the guardrails honestly, including the model's mistakes | A clean, idealised example |
+| Keep v1 results and both audits in the repo | Shows the bug was found by evaluation, and the variance between runs | Only publish the best run |
+
+---
+
+## 30-second pitch (memorise the shape, not the words)
+"Container Doctor is a local AI agent that diagnoses broken Docker containers.
+I wrote the tool-calling loop by hand, without LangChain, so I could see and
+control every step. It uses a 3B model on CPU via Ollama, six Docker tools
+with an allowlist and human approval for anything that changes state, and
+agentic RAG over 21 runbooks in ChromaDB. I built 15 deliberately broken
+compose scenarios and an eval harness. With runbooks it got 12 of 15
+diagnoses right versus 8 of 15 without, at about 3× the time. The
+interesting part was what broke: the small model ignored prompt rules, so I
+moved them into code; the eval caught a bug where a nudge erased a correct
+answer; and semantic search failed on exit codes, which is why hybrid search
+would be my next step."
