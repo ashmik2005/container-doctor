@@ -85,6 +85,7 @@ whole history. When it replies without a tool call, that is the answer.
 | `test_safety.py` | Offline tests for the safety layer |
 | `smoke_test.py` | Checks the local Ollama models respond |
 | `LEARNING.md` | Per-stage notes: concepts, design decisions, interview Q&A |
+| `report/` | 3-page PDF report ([`container_doctor_report.pdf`](report/container_doctor_report.pdf)); tables generated from `results/` by `make_tables.py` |
 
 ## Setup
 

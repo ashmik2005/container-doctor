@@ -8,3 +8,8 @@ chroma_db/
 
 # Eval run logs (results table is committed, raw transcripts are not)
 eval_logs/
+
+# LaTeX build files
+report/*.aux
+report/*.log
+report/*.out
