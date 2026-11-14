@@ -1,0 +1,21 @@
+{
+  "question": "My thumbnailer job crashes. Why?",
+  "root_cause": "The /cache tmpfs is limited to 1 MB and the job writes 5 MB, so it fails with 'No space left on device'.",
+  "keywords": [
+    [
+      "space",
+      "full",
+      "errno 28"
+    ],
+    [
+      "tmpfs",
+      "1m",
+      "1 mb",
+      "1mb",
+      "/cache",
+      "size",
+      "limit"
+    ]
+  ],
+  "wait_seconds": 4
+}

@@ -1,0 +1,18 @@
+{
+  "question": "My notifier container exits with an error. What is wrong?",
+  "root_cause": "The Python package 'requests' is not installed in the python:3.12-alpine image (ModuleNotFoundError).",
+  "keywords": [
+    [
+      "requests"
+    ],
+    [
+      "install",
+      "installed",
+      "missing",
+      "not found",
+      "modulenotfounderror",
+      "no module"
+    ]
+  ],
+  "wait_seconds": 3
+}

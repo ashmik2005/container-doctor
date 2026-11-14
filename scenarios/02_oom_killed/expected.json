@@ -1,0 +1,20 @@
+{
+  "question": "My data processing worker stopped. Why?",
+  "root_cause": "The worker was killed by the kernel OOM killer (exit 137, OOMKilled=true) because its 20 MiB memory limit is too low.",
+  "keywords": [
+    [
+      "memory",
+      "oom",
+      "oomkilled",
+      "out of memory"
+    ],
+    [
+      "limit",
+      "137",
+      "killed",
+      "mem_limit",
+      "oomkilled"
+    ]
+  ],
+  "wait_seconds": 5
+}

@@ -1,0 +1,6 @@
+# Broken on purpose: typo in the command ("pyhton").
+services:
+  report:
+    image: python:3.12-alpine
+    container_name: report
+    command: ["pyhton", "-c", "print('generating report')"]

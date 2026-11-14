@@ -1,0 +1,8 @@
+# Broken on purpose: nginx.conf is missing a ';' after the return directive (line 6).
+services:
+  proxy:
+    image: nginx:alpine
+    container_name: proxy
+    ports: ["8083:80"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro

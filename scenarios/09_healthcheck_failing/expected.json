@@ -1,0 +1,18 @@
+{
+  "question": "My frontend shows as unhealthy. What is wrong?",
+  "root_cause": "The healthcheck probes http://localhost:8080 but nginx listens on port 80, so every check fails.",
+  "keywords": [
+    [
+      "healthcheck",
+      "health check",
+      "health"
+    ],
+    [
+      "8080"
+    ],
+    [
+      "80"
+    ]
+  ],
+  "wait_seconds": 15
+}

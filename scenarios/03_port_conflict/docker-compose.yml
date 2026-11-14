@@ -1,0 +1,10 @@
+# Broken on purpose: two services publish the same host port 8080.
+services:
+  shop:
+    image: nginx:alpine
+    container_name: shop
+    ports: ["8080:80"]
+  admin:
+    image: nginx:alpine
+    container_name: admin
+    ports: ["8080:80"]   # should be e.g. "8081:80"

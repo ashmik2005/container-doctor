@@ -1,0 +1,21 @@
+{
+  "question": "My report container never runs. What is wrong?",
+  "root_cause": "The command has a typo: 'pyhton' instead of 'python', so the executable is not found (exit 127).",
+  "keywords": [
+    [
+      "pyhton",
+      "typo",
+      "misspelled",
+      "misspelling",
+      "misspell"
+    ],
+    [
+      "python",
+      "command",
+      "executable",
+      "not found",
+      "127"
+    ]
+  ],
+  "wait_seconds": 3
+}

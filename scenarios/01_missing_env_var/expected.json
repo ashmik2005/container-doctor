@@ -1,0 +1,18 @@
+{
+  "question": "My web app is down. What is wrong?",
+  "root_cause": "The web container crashes at startup because the DATABASE_URL environment variable is not set in docker-compose.yml.",
+  "keywords": [
+    [
+      "DATABASE_URL"
+    ],
+    [
+      "environment",
+      "env var",
+      "env",
+      "not set",
+      "missing",
+      "undefined"
+    ]
+  ],
+  "wait_seconds": 3
+}

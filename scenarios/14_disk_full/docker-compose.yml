@@ -1,0 +1,16 @@
+# Broken on purpose: the cache directory is a 1 MB tmpfs, the job writes 5 MB.
+services:
+  thumbnailer:
+    image: python:3.12-alpine
+    container_name: thumbnailer
+    tmpfs:
+      - /cache:size=1m
+    command:
+      - python
+      - -c
+      - |
+        print("Writing thumbnails to /cache", flush=True)
+        with open("/cache/thumbs.bin", "wb") as f:
+            for i in range(5):
+                f.write(b"x" * 1024 * 1024)
+                f.flush()

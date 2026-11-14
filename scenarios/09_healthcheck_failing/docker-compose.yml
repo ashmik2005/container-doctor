@@ -1,0 +1,11 @@
+# Broken on purpose: nginx listens on 80, the healthcheck probes 8080.
+services:
+  frontend:
+    image: nginx:alpine
+    container_name: frontend
+    ports: ["8082:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/"]   # should be :80
+      interval: 2s
+      timeout: 2s
+      retries: 2

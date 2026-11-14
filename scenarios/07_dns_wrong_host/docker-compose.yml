@@ -1,0 +1,24 @@
+# Broken on purpose: the app connects to host "database" but the service is named "db".
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: db
+    environment:
+      POSTGRES_PASSWORD: secret
+  backend:
+    image: python:3.12-alpine
+    container_name: backend
+    environment:
+      DB_HOST: database          # should be: db
+      DB_PORT: "5432"
+    command:
+      - python
+      - -c
+      - |
+        import os, socket, time
+        time.sleep(3)
+        host = os.environ["DB_HOST"]
+        print(f"Connecting to {host}:5432", flush=True)
+        socket.create_connection((host, 5432), timeout=5)
+        print("connected")
+

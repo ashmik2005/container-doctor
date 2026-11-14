@@ -370,3 +370,83 @@ queries, so the vocabulary overlaps more than real user text would.
    product of lengths. It compares direction (meaning) and ignores magnitude,
    so it's the standard measure for text embeddings. Chroma returns distance =
    1 − cosine similarity.
+
+---
+
+## Stage 4: Broken scenarios
+
+### What we built
+- 15 scenarios in `scenarios/NN_name/`, each a `docker-compose.yml` broken in
+  exactly one known way (the broken line is commented), plus `expected.json`:
+  ```json
+  {"question": "My web app is down. What is wrong?",     // vague, user-style
+   "root_cause": "... DATABASE_URL ... not set ...",     // ground truth for humans
+   "keywords": [["DATABASE_URL"], ["environment", "env var", "missing", ...]],
+   "wait_seconds": 3}                                    // time for the failure to happen
+  ```
+- `scenario.sh`: `list`, `pull`, `up <name>`, `down`. All scenarios use compose
+  project `cdoc`, so `down` removes everything by label, whichever scenario ran.
+
+| # | Scenario | How it fails | Where the evidence is |
+|---|---|---|---|
+| 01 | missing_env_var | `KeyError: 'DATABASE_URL'` | logs |
+| 02 | oom_killed | exit 137, `OOMKilled: true`, 20 MiB limit | inspect (logs say nothing) |
+| 03 | port_conflict | `Bind for 0.0.0.0:8080 failed: port is already allocated` | inspect `State.Error` (status `Created`, no logs) |
+| 04 | db_not_ready | psql `Connection refused` before Postgres is ready | logs of api + db timing |
+| 05 | wrong_volume_path | `FileNotFoundError: /config/app.yaml` (mounted at `/conf`) | logs + inspect `Mounts` |
+| 06 | permission_denied | `PermissionError` creating `/var/lib/uploads` as UID 1000 | logs + inspect `User` |
+| 07 | dns_wrong_host | `socket.gaierror: [Errno -3] Try again` for host `database` | logs + inspect `Env` |
+| 08 | crash_loop | `Restarting`, `ValueError ... 'four'` from `WORKERS` | status + logs |
+| 09 | healthcheck_failing | `Up (unhealthy)`, check probes `:8080`, nginx on `:80` | inspect `Health` |
+| 10 | wrong_command | `exec: "pyhton": executable file not found` (exit 127) | inspect `State.Error` (no logs) |
+| 11 | nginx_config_error | `[emerg] unexpected "}" in nginx.conf:7` | logs |
+| 12 | binds_localhost | Up, but bound to `127.0.0.1` inside the container | logs + `check_port` |
+| 13 | wrong_db_password | `password authentication failed for user "postgres"` | logs (app and db) |
+| 14 | disk_full | `[Errno 28] No space left on device` on a 1 MB tmpfs | logs + inspect `Tmpfs` |
+| 15 | missing_module | `ModuleNotFoundError: No module named 'requests'` | logs |
+
+The scenarios are spread on purpose: some only need logs, some *only* show up
+in `docker inspect` (02, 03, 10), and one only shows up when you connect (12).
+
+### Things that surprised me while building them (verified)
+- **Port conflict (03): which container fails depends on start order.** In one
+  run `shop` failed, not `admin`. The failed container stays `Created` with
+  exit code 128 and **empty logs**. The error is only in `State.Error`. So the
+  expected root cause says "one of the two".
+- **Wrong command (10) also leaves empty logs.** The process never started,
+  so the error is in `State.Error` and the exit code is 127.
+- **DNS (07): a wrong service name gave `[Errno -3] Try again`, not "Name does
+  not resolve".** Docker's embedded DNS couldn't answer and the resolver
+  reported a *temporary* failure. Putting the services on an `internal`
+  network didn't change it, so I reverted that. It takes about 9 s to fail
+  (`wait_seconds: 12`). The DNS runbook now lists this symptom.
+- **nginx reports the line *after* the mistake.** A missing `;` on line 6 is
+  reported as `unexpected "}"` on line 7, because that's where the parser notices.
+- **Python stdout buffering** (01): "Starting web app..." appears *after* the
+  traceback in the logs. stderr is unbuffered and stdout is flushed at exit.
+  Later scenarios use `flush=True`.
+
+### Design decisions
+| Decision | Why | Alternative considered |
+|---|---|---|
+| Public images only (python/nginx/postgres alpine), app code inline in `command:` | No image builds, fast setup, each scenario fully visible in one file | Dockerfiles per scenario (more realistic, slower, more to explain) |
+| One fixed compose project name `cdoc` | `down` can clean up any scenario by label; no leftovers between eval runs | Per-scenario project names |
+| Vague user-style questions | Tests diagnosis, not reading the answer from the question | Questions that name the symptom precisely |
+| Keyword groups in `expected.json` | Simple, transparent, deterministic scoring (see Stage 5) | LLM-as-judge |
+| `wait_seconds` per scenario | Healthcheck/DNS/crash-loop failures need time to appear | One global sleep (too short for some, wasteful for others) |
+
+### Interview questions
+1. **"How do you know each scenario is broken in exactly one way?"**
+   Each compose file differs from a working setup by one commented line. I
+   started every scenario and recorded status, exit code, `State.Error` and the
+   last log lines (table above) before running the agent on it.
+2. **"Why do some scenarios have empty logs?"**
+   If the container process never starts (port conflict, command typo), there
+   is nothing to log. The error comes from Docker/runc and is stored in
+   `State.Error`. That's why `inspect_container` exists, and why a logs-only
+   agent would fail those cases.
+3. **"What's the weakness of writing your own test scenarios?"**
+   I wrote the scenarios, runbooks and keywords myself, so they share
+   vocabulary and my blind spots. Real failures are messier: multiple causes,
+   noisy logs, other containers running. It's a benchmark of the method, not
+   proof the agent works in production.

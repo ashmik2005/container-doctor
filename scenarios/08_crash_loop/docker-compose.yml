@@ -1,0 +1,17 @@
+# Broken on purpose: WORKERS must be a number; restart: always turns the
+# startup crash into an endless restart loop.
+services:
+  queue:
+    image: python:3.12-alpine
+    container_name: queue
+    restart: always
+    environment:
+      WORKERS: four              # should be: "4"
+    command:
+      - python
+      - -c
+      - |
+        import os
+        print("Starting queue consumer", flush=True)
+        workers = int(os.environ["WORKERS"])
+        print(f"{workers} workers ready")

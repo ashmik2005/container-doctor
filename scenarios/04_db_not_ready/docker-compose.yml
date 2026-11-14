@@ -1,0 +1,13 @@
+# Broken on purpose: depends_on only waits for the db container to START,
+# not for Postgres to be READY. The app connects once, immediately, and dies.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: db
+    environment:
+      POSTGRES_PASSWORD: secret
+  api:
+    image: postgres:16-alpine   # reused only for its psql client
+    container_name: api
+    depends_on: [db]            # missing: condition: service_healthy + a healthcheck
+    command: ["psql", "postgresql://postgres:secret@db:5432/postgres", "-c", "SELECT 1"]

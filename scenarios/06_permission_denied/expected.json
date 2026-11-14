@@ -1,0 +1,20 @@
+{
+  "question": "The uploader container exits immediately. What is wrong?",
+  "root_cause": "The container runs as UID 1000 and is not allowed to create /var/lib/uploads, which is owned by root (permission denied).",
+  "keywords": [
+    [
+      "permission",
+      "permissions"
+    ],
+    [
+      "1000",
+      "user",
+      "root",
+      "owner",
+      "owned",
+      "uid",
+      "non-root"
+    ]
+  ],
+  "wait_seconds": 3
+}

@@ -1,0 +1,25 @@
+{
+  "question": "My api container fails right after I run docker compose up. The database looks fine. Why?",
+  "root_cause": "The api connects to Postgres before it is ready: depends_on only waits for the db container to start, so the connection is refused.",
+  "keywords": [
+    [
+      "ready",
+      "starting up",
+      "not yet",
+      "before",
+      "race",
+      "timing",
+      "healthcheck",
+      "health check",
+      "service_healthy",
+      "wait"
+    ],
+    [
+      "db",
+      "database",
+      "postgres",
+      "postgresql"
+    ]
+  ],
+  "wait_seconds": 8
+}

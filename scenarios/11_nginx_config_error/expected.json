@@ -1,0 +1,19 @@
+{
+  "question": "My nginx proxy will not start. What is wrong?",
+  "root_cause": "nginx.conf has a syntax error: the return directive on line 6 is missing its semicolon, so nginx exits with [emerg] unexpected \"}\" (reported at line 7).",
+  "keywords": [
+    [
+      "nginx.conf",
+      "config",
+      "configuration"
+    ],
+    [
+      "syntax",
+      "semicolon",
+      ";",
+      "emerg",
+      "unexpected"
+    ]
+  ],
+  "wait_seconds": 3
+}

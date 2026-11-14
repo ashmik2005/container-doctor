@@ -1,0 +1,13 @@
+# Broken on purpose: the config is mounted at /conf but the app reads /config.
+services:
+  app:
+    image: python:3.12-alpine
+    container_name: app
+    volumes:
+      - ./config:/conf:ro      # should be ./config:/config:ro
+    command:
+      - python
+      - -c
+      - |
+        print("Reading /config/app.yaml", flush=True)
+        print(open("/config/app.yaml").read())

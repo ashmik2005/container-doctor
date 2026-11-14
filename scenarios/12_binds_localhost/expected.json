@@ -1,0 +1,20 @@
+{
+  "question": "My dashboard container is running but I cannot open http://localhost:8000. Why?",
+  "root_cause": "The http.server binds to 127.0.0.1 inside the container, so connections forwarded from the published host port never reach it; it must bind 0.0.0.0.",
+  "keywords": [
+    [
+      "127.0.0.1",
+      "loopback"
+    ],
+    [
+      "0.0.0.0",
+      "bind",
+      "binds",
+      "bound",
+      "binding",
+      "interface",
+      "interfaces"
+    ]
+  ],
+  "wait_seconds": 4
+}

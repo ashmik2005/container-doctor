@@ -1,0 +1,16 @@
+{
+  "question": "My app says it cannot find its config file, but the file exists in my project folder.",
+  "root_cause": "The config directory is mounted at /conf but the app reads /config/app.yaml, so the mount destination path is wrong.",
+  "keywords": [
+    [
+      "/conf"
+    ],
+    [
+      "mount",
+      "mounted",
+      "mounts",
+      "volume"
+    ]
+  ],
+  "wait_seconds": 3
+}

@@ -1,0 +1,8 @@
+# Broken on purpose: the server binds to 127.0.0.1 INSIDE the container, so
+# traffic forwarded from the host port never reaches it.
+services:
+  dashboard:
+    image: python:3.12-alpine
+    container_name: dashboard
+    ports: ["8000:8000"]
+    command: ["python", "-u", "-m", "http.server", "8000", "--bind", "127.0.0.1"]   # should be 0.0.0.0

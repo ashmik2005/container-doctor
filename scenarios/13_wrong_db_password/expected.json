@@ -1,0 +1,25 @@
+{
+  "question": "My billing job cannot connect to the database. What is wrong?",
+  "root_cause": "The billing container uses password 'hunter2' but the database password is 'secret', so password authentication fails.",
+  "keywords": [
+    [
+      "password",
+      "credentials",
+      "credential",
+      "authentication"
+    ],
+    [
+      "fail",
+      "fails",
+      "failed",
+      "failure",
+      "wrong",
+      "incorrect",
+      "mismatch",
+      "invalid",
+      "does not match",
+      "doesn't match"
+    ]
+  ],
+  "wait_seconds": 15
+}

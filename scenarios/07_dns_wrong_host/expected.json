@@ -1,0 +1,21 @@
+{
+  "question": "My backend cannot reach the database. What is going on?",
+  "root_cause": "DB_HOST is set to 'database', but the Postgres service is named 'db', so the hostname does not resolve.",
+  "keywords": [
+    [
+      "DB_HOST",
+      "hostname",
+      "host name",
+      "service name"
+    ],
+    [
+      "resolve",
+      "resolved",
+      "resolution",
+      "dns",
+      "not known",
+      "unknown host"
+    ]
+  ],
+  "wait_seconds": 12
+}

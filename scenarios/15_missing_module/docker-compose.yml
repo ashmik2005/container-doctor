@@ -1,0 +1,13 @@
+# Broken on purpose: the script needs the 'requests' package, which the
+# plain python image does not include (no pip install step).
+services:
+  notifier:
+    image: python:3.12-alpine
+    container_name: notifier
+    command:
+      - python
+      - -c
+      - |
+        print("Starting notifier", flush=True)
+        import requests
+        requests.post("http://example.com/hook", json={"msg": "hi"})

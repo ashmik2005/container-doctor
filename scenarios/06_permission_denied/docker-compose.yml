@@ -1,0 +1,14 @@
+# Broken on purpose: runs as UID 1000 but writes into a root-owned directory.
+services:
+  uploader:
+    image: python:3.12-alpine
+    container_name: uploader
+    user: "1000:1000"
+    command:
+      - python
+      - -c
+      - |
+        import os
+        print("Saving uploads to /var/lib/uploads", flush=True)
+        os.makedirs("/var/lib/uploads", exist_ok=True)
+        open("/var/lib/uploads/file.txt", "w").write("data")

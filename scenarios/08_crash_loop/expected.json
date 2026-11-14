@@ -1,0 +1,19 @@
+{
+  "question": "My queue consumer keeps restarting. Why?",
+  "root_cause": "The WORKERS environment variable is 'four' instead of a number, so int() raises ValueError at startup and restart: always causes a crash loop.",
+  "keywords": [
+    [
+      "WORKERS"
+    ],
+    [
+      "four",
+      "int",
+      "number",
+      "integer",
+      "numeric",
+      "valueerror",
+      "invalid"
+    ]
+  ],
+  "wait_seconds": 6
+}

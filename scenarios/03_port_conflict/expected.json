@@ -1,0 +1,17 @@
+{
+  "question": "I started my shop and admin sites but one of them never came up. What happened?",
+  "root_cause": "Both shop and admin publish host port 8080; whichever starts second cannot start because the port is already allocated by the other.",
+  "keywords": [
+    [
+      "8080"
+    ],
+    [
+      "already allocated",
+      "in use",
+      "conflict",
+      "conflicting",
+      "already"
+    ]
+  ],
+  "wait_seconds": 3
+}

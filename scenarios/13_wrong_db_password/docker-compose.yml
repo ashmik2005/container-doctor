@@ -1,0 +1,17 @@
+# Broken on purpose: the app uses a different password than the database.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: db
+    environment:
+      POSTGRES_PASSWORD: secret
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 15
+  billing:
+    image: postgres:16-alpine   # reused only for its psql client
+    container_name: billing
+    depends_on:
+      db: {condition: service_healthy}
+    command: ["psql", "postgresql://postgres:hunter2@db:5432/postgres", "-c", "SELECT 1"]   # should be secret
