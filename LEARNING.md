@@ -450,3 +450,81 @@ in `docker inspect` (02, 03, 10), and one only shows up when you connect (12).
    vocabulary and my blind spots. Real failures are messier: multiple causes,
    noisy logs, other containers running. It's a benchmark of the method, not
    proof the agent works in production.
+
+---
+
+## Stage 5: Evaluation
+
+### What we built
+- `eval.py`: for each of the 15 scenarios and each mode (`no_rag`, `rag`):
+  start the scenario fresh (`scenario.sh up`), run the agent with the
+  scenario's question and an approval function that **denies everything**,
+  score the final answer, and record steps, tool calls, whether runbooks were
+  used, number of nudges and wall time. It saves results after every run, so
+  a crash at run 25 still leaves 24 results.
+- `results/eval_results.md` / `.json`: the table (committed).
+- `eval_logs/<scenario>__<mode>.json`: full message history of every run
+  (git-ignored, but that's where you check *why* a run failed).
+
+### Scoring method
+Each scenario has keyword **groups**, e.g. for the missing env var:
+`[["DATABASE_URL"], ["environment", "env var", "missing", ...]]`.
+The answer is **correct** if every group has at least one keyword in it, as
+a whole word and case-insensitive. Groups force the answer to name *what*
+(DATABASE_URL) **and** *why* (missing env), so naming only one isn't enough.
+
+**Whole-word matching** was a bug fix before the first run. Plain substring
+matching made `"80"` match inside `"8080"` and `"/conf"` match `"/config"`, so
+wrong answers would have scored as correct.
+
+**Keywords never appear in the question.** For example, scenario 07's question
+says "database", so "database" isn't a keyword (it uses `DB_HOST`, `hostname`,
+`resolve`). Otherwise echoing the question would score.
+
+### Weaknesses (say these before the interviewer does)
+- **False positives:** an answer that lists many possible causes can hit all
+  groups without committing to the right one. A keyword in a wrong context
+  ("it is NOT a permission problem") also counts.
+- **False negatives:** a correct answer in other words ("the variable isn't
+  defined") can miss the list.
+- **Same author** for scenarios, runbooks and keywords, so the vocabulary
+  overlaps and the RAG gain is probably optimistic.
+- **Small sample:** 15 scenarios × 1 run per mode. One flipped result moves a
+  mode by ~7 percentage points. Runs are not fully deterministic (timestamps
+  in tool output), so a re-run can differ.
+- **Nudges blur the comparison:** in `rag` mode the loop may add a
+  "search the runbooks" nudge, which also gives the model one extra turn.
+
+### Why not LLM-as-judge?
+A judge model reading (expected root cause, answer) handles paraphrases
+better. But the only judge available locally is the same 3B model, which would
+grade its own family's output and add its own errors. Keywords are dumb but
+**transparent and deterministic**: anyone can check a score by reading the
+answer. Improvement: a stronger judge model plus spot-checking by a human.
+
+### Run v1 results (measured by eval.py, `results/eval_results_v1.md`)
+| Mode | Correct (keywords) | Avg steps | Avg tool calls | Avg seconds |
+|---|---|---|---|---|
+| no_rag | 9/15 | 4.1 | 2.4 | 35.6 |
+| rag | 12/15 | 7.7 | 4.7 | 131.3 |
+
+Other measured facts from v1: in `rag` mode the model called
+`search_runbooks` in 13 of 15 runs, and 5 runs hit the step limit (none did
+in `no_rag`). Nudges: 11 in total in `no_rag`, 35 in `rag`.
+
+### What the manual audit of v1 found (`results/manual_audit_v1.md`)
+- **Keyword scoring was too generous without RAG.** 3 of the 9 "correct"
+  no_rag answers were wrong or only partly right. One example: the root cause
+  said "infinite loop" and "memory" appeared only in the fix.
+- **RAG helped most where the error needs interpretation:** startup race (04),
+  mount path (05), DNS (07), bind address (12). Those are the cases where the
+  raw error message doesn't name the cause.
+- **RAG also hurt once (11):** a misleading runbook ("exits immediately") led
+  the model away from a correct nginx diagnosis. Retrieval adds noise as well as knowledge.
+- **The eval found a bug in the agent (13 rag):** the model gave a correct
+  answer, a nudge followed, it replied with an empty message, and the loop
+  accepted the empty message as final. **The nudges could destroy a good
+  answer.** Fixed for v2 by keeping the last answer that contains
+  `ROOT CAUSE` as a fallback.
+- **Fixes are often poor** even when the root cause is right: restart
+  suggestions, a backwards mount fix, `apk add requests`.
