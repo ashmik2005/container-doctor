@@ -75,6 +75,7 @@ whole history. When it replies without a tool call, that is the answer.
 | Path | What it is |
 |---|---|
 | `agent.py` | The agent loop: model calls, tool execution, guards, step limit |
+| `api.py` | FastAPI REST layer: health, containers, background diagnosis jobs |
 | `tools.py` | Tool functions + JSON schemas + command allowlist |
 | `rag.py` | Runbook chunking, embedding, ChromaDB storage and search |
 | `runbooks/` | 21 short markdown runbooks, one failure type each |
@@ -83,6 +84,7 @@ whole history. When it replies without a tool call, that is the answer.
 | `eval.py` | Runs every scenario with and without RAG, scores, writes `results/` |
 | `eval_retrieval.py` | Measures retrieval quality of three chunking strategies |
 | `test_safety.py` | Offline tests for the safety layer |
+| `test_api.py` | Offline API tests (fake agent, FastAPI TestClient) |
 | `smoke_test.py` | Checks the local Ollama models respond |
 | `LEARNING.md` | Per-stage notes: concepts, design decisions, interview Q&A |
 | `report/` | 3-page PDF report ([`container_doctor_report.pdf`](report/container_doctor_report.pdf)); tables generated from `results/` by `make_tables.py` |
@@ -122,9 +124,45 @@ python3 -m venv .venv
 ./scenario.sh down
 
 .venv/bin/python test_safety.py          # safety layer tests (no model needed)
+.venv/bin/python test_api.py             # API tests (no model needed)
+.venv/bin/uvicorn api:app --port 8000     # REST API, docs at http://127.0.0.1:8000/docs
 .venv/bin/python eval_retrieval.py       # chunking comparison
 .venv/bin/python eval.py                 # full evaluation (~1 hour on CPU)
 ```
+
+## REST API
+
+`api.py` serves the agent over HTTP with FastAPI (interactive docs at `/docs`).
+
+| Method + path | Purpose | Codes |
+|---|---|---|
+| `GET /health` | Ollama (with model) and Docker reachable? | 200, 503 |
+| `GET /containers` | All containers as JSON | 200 |
+| `POST /diagnoses` | Start a diagnosis; returns a job id immediately | 202 + `Location`, 422 |
+| `GET /diagnoses/{id}` | Status `queued/running/done/failed` and result (`?include_messages=true` for the transcript) | 200, 404 |
+| `GET /diagnoses` | Recent jobs | 200 |
+
+A diagnosis takes minutes on CPU, so `POST` returns `202 Accepted` at once and the client polls.
+One worker thread runs jobs in order (one model, one CPU); state-changing tools are always denied
+because no human can approve them. Real session against scenario 01:
+
+```bash
+$ .venv/bin/uvicorn api:app --port 8000
+$ curl localhost:8000/health
+{"status":"ok","ollama":"ok","docker":"ok"}
+$ curl -X POST localhost:8000/diagnoses -H 'Content-Type: application/json' \
+       -d '{"question": "My web app is down. What is wrong?"}'
+HTTP/1.1 202 Accepted
+location: /diagnoses/8bdcbc1c715a
+{"id":"8bdcbc1c715a","status":"running", ...}
+$ curl localhost:8000/diagnoses/8bdcbc1c715a        # about 4 minutes later
+{"id":"8bdcbc1c715a","status":"done","result":{"answer":"ROOT CAUSE: The web container is missing
+ the `DATABASE_URL` environment variable, causing a `KeyError` ...","steps":9,"seconds":232.7, ...}}
+$ curl -X POST localhost:8000/diagnoses -H 'Content-Type: application/json' -d '{"question": "hi"}'
+{"detail":[{"type":"string_too_short","loc":["body","question"],"msg":"String should have at least 3 characters", ...}]}   # HTTP 422
+```
+
+The API has **no authentication**, so it binds to 127.0.0.1 only (uvicorn's default).
 
 ## Safety
 
@@ -232,4 +270,5 @@ so the two runs also show how much results vary between runs.
 - **Not fully deterministic** even at temperature 0: tool output contains timestamps ("Exited 38 seconds ago"), so inputs differ between runs. Each scenario ran twice per mode (v1, v2), and several results flipped between runs; treat the numbers as indicative, not precise.
 - **Security:** being in the `docker` group is root-equivalent. A production version should use rootless Docker or a read-only Docker API proxy.
 - **CPU speed:** a diagnosis takes roughly 1–2 minutes on a laptop CPU.
+- **API is local-only:** no authentication, jobs live in memory (lost on restart), no cancel endpoint.
 - **ChromaDB is heavy** (~80 transitive packages) for 73 vectors; numpy would do at this size, but it would not persist or scale.

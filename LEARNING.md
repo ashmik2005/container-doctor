@@ -610,3 +610,88 @@ interesting part was what broke: the small model ignored prompt rules, so I
 moved them into code; the eval caught a bug where a nudge erased a correct
 answer; and semantic search failed on exit codes, which is why hybrid search
 would be my next step."
+
+---
+
+## Stage 7: REST API (FastAPI)
+
+Added after the main build, for roles that ask for "hands-on experience with
+REST APIs" (e.g. the Sarvam AI FDSE internship).
+
+### What we built
+- `api.py`: a FastAPI app with 5 endpoints:
+  | Method + path | What it does | Success code |
+  |---|---|---|
+  | `GET /health` | Is Ollama up with the model pulled? Is Docker up? | 200, or **503** if degraded |
+  | `GET /containers` | All containers as JSON | 200 |
+  | `POST /diagnoses` | Start a diagnosis, return a job id immediately | **202 Accepted** + `Location` header |
+  | `GET /diagnoses/{id}` | Job status: queued / running / done / failed, plus the result | 200, or **404** |
+  | `GET /diagnoses` | Recent jobs, newest first | 200 |
+- `test_api.py`: 8 offline tests using FastAPI's `TestClient` and a fake agent.
+- Interactive docs at `/docs`, generated automatically from the code (OpenAPI).
+
+### Key concepts
+**REST in one paragraph.** Things are *resources* with URLs (`/diagnoses/8bdc…`),
+and HTTP *methods* say what to do with them: `GET` reads (safe, repeatable),
+`POST` creates. *Status codes* tell the client what happened without reading
+the body: 2xx success, 4xx the client's fault, 5xx the server's fault.
+
+**Async job pattern (202 + polling).** A diagnosis takes 1–3 minutes on CPU.
+Holding a request open that long breaks on client, proxy and load-balancer
+timeouts. So `POST` answers in milliseconds with `202 Accepted` ("I took the
+job, it's not done") and a `Location` header. The client polls that URL. The
+alternatives are webhooks (the server calls the client back) and streaming
+(Server-Sent Events / WebSockets, which push each agent step live).
+
+**Pydantic validation.** Request bodies are declared as classes
+(`question: str = Field(min_length=3, max_length=500)`). FastAPI checks every
+request against them and returns **422** with a precise error before my code
+runs. The same classes generate the `/docs` page.
+
+**Why `def` and not `async def` for the endpoints.** The agent makes
+blocking calls (Ollama HTTP, `subprocess`). In an `async def` endpoint a
+blocking call freezes the whole event loop, and every other request with it.
+Plain `def` endpoints run in FastAPI's thread pool, so blocking is fine.
+
+**One worker thread.** `ThreadPoolExecutor(max_workers=1)`: the CPU can only
+run one model call at a time anyway. Extra jobs wait as `queued` instead of
+fighting over the CPU and all getting slow.
+
+**Lock around the job dict.** The worker thread writes job status while
+request threads read it. The lock means a reader never sees a half-updated job.
+
+**No human in an API call.** `approve` always returns False, so state-changing
+tools (restart) are refused. Same rule as eval: if you can't ask, deny.
+
+### Design decisions
+| Decision | Why | Alternative considered |
+|---|---|---|
+| FastAPI | Type hints → validation + OpenAPI docs for free; the standard Python API framework now | Flask (no built-in validation/docs) |
+| 202 + polling | Simple for any client (curl works); survives timeouts | Synchronous POST (times out); SSE streaming (nicer UX, more code) |
+| In-memory job dict | Zero dependencies; enough for one user on one machine | Redis / a database (needed for restarts and multiple server processes) |
+| Single worker | Matches the hardware: one model on one CPU | More workers (they'd just slow each other down) |
+| `/health` returns 503 when degraded | Load balancers and monitors understand status codes, not JSON text | Always 200 with a status field |
+| Transcript only with `?include_messages=true` | Responses stay small; the full message list is available for debugging | Always include it |
+| Bind to 127.0.0.1 (uvicorn default) | The API has **no authentication** and can read the Docker host | Expose on 0.0.0.0 (would need auth first) |
+
+### Limitations (say them before you're asked)
+No authentication, so it's local only. Jobs are lost on restart and the dict
+grows without bound. No cancel endpoint. One server process only (each
+process would have its own job dict).
+
+### Interview questions
+1. **"Why does POST /diagnoses return 202 and not 200 or 201?"**
+   201 Created implies the resource is ready. 200 would mean "here is your
+   result". The diagnosis isn't finished; it has only been accepted for
+   processing, which is exactly what 202 means. The `Location` header tells
+   the client where to poll.
+2. **"What happens if two users submit at the same time?"**
+   Both get a job id immediately. The executor has one worker, so the second
+   job waits as `queued` and starts when the first finishes. A lock protects
+   the shared job dict. With more hardware I'd add workers, and move jobs to
+   Redis so several server processes can share them.
+3. **"How would you make this production-ready?"**
+   Authentication (API keys), a persistent job store (Redis/Postgres), a
+   cancel endpoint and job expiry, streaming the agent's steps over SSE,
+   rate limiting, structured logs, and running it in a container with
+   read-only access to the Docker API through a proxy instead of the full socket.

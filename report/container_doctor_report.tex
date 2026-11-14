@@ -72,7 +72,7 @@ Independent personal project \,·\, November 2026 \,·\,
 investigates the Docker host by itself through a set of read-only tools, and replies with a
 root cause, the evidence for it and a fix. It runs fully offline on a laptop CPU with a
 3-billion-parameter model (\code{qwen2.5:3b} via Ollama), and the tool-calling loop is written
-by hand in about 250 lines of Python without any agent framework. A runbook knowledge base
+by hand in about 250 lines of Python without any agent framework, and is also served as a FastAPI REST service. A runbook knowledge base
 (21 notes in ChromaDB) is exposed as a search tool, so the agent decides when to retrieve.
 On 15 deliberately broken docker compose scenarios, the agent found the right root cause in
 \textbf{12/15} cases with the runbook tool and \textbf{8/15} without it, at about 3.3$\times$ the time per
@@ -158,6 +158,14 @@ retrieval. Because the agent runs real commands, safety is layered:
 \item \textbf{Bounds.} At most 8 model calls per run, 1024 generated tokens per call, 3000 characters
   per tool result (keeping the tail, where errors are), 30\,s per command, explicit 8k context.
 \end{itemize}
+
+\subsection{REST API}
+\code{api.py} exposes the agent with FastAPI: \code{GET /health} (Ollama and Docker reachable, else 503),
+\code{GET /containers}, \code{POST /diagnoses} and \code{GET /diagnoses/\{id\}}. Because a diagnosis takes
+minutes on a CPU, \code{POST} returns \code{202 Accepted} with a job id and a \code{Location} header, and the
+client polls; a single worker thread runs jobs in order, and Pydantic models validate every request (422 on bad
+input). No human can approve actions through the API, so state-changing tools are always denied. A real request
+against the missing-env-var scenario returned the correct root cause after 233\,s.
 
 \subsection{Making a 3B model reliable}
 The small model often ignored rules that were only written in the prompt: it answered after

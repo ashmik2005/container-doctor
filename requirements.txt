@@ -1,2 +1,5 @@
 ollama==0.6.3
 chromadb==1.5.9
+fastapi==0.162.7
+uvicorn==0.54.0
+httpx==0.28.1   # only for test_api.py (FastAPI TestClient)
