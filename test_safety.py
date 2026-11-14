@@ -44,6 +44,29 @@ def test_truncation_keeps_tail():
     assert len(short) < 1100 and short.endswith("FATAL ERROR") and "truncated" in short
 
 
+def test_nudge_cannot_erase_good_answer():
+    """Regression test for eval run v1, scenario 13 (rag): a correct answer was
+    followed by a nudge, the model replied with empty messages, and the empty
+    reply became the final answer."""
+    import agent
+    from tools import TOOL_SCHEMAS
+
+    scripted = iter([
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "get_logs", "arguments": {"container": "billing"}}}]},
+        {"role": "assistant", "content": "ROOT CAUSE: wrong password\nEVIDENCE: ...\nFIX: ..."},
+        {"role": "assistant", "content": ""},   # after the "search runbooks" nudge
+        {"role": "assistant", "content": ""},   # after the "format" nudge
+    ])
+    real_call_model = agent.call_model
+    agent.call_model = lambda messages, tools: next(scripted)  # fake model, no Ollama
+    try:
+        result = agent.run_agent("db?", TOOL_SCHEMAS, approve=ALWAYS_NO, verbose=False)
+    finally:
+        agent.call_model = real_call_model
+    assert result["answer"].startswith("ROOT CAUSE: wrong password"), result["answer"]
+
+
 if __name__ == "__main__":
     tests = [f for name, f in dict(globals()).items() if name.startswith("test_")]
     for test in tests:

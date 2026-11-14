@@ -168,6 +168,7 @@ def run_agent(question: str, tool_schemas: list = TOOL_SCHEMAS,
     tools_used = []
     seen_calls = set()
     answer = None
+    best_answer = None  # last reply that contained "ROOT CAUSE"
     nudges_sent = set()
     rag_enabled = "search_runbooks" in {s["function"]["name"] for s in tool_schemas}
 
@@ -176,10 +177,13 @@ def run_agent(question: str, tool_schemas: list = TOOL_SCHEMAS,
         messages.append(assistant_msg)
         log(assistant_msg)
 
+        content = assistant_msg.get("content", "")
+        if "ROOT CAUSE" in content.upper():
+            best_answer = content  # remember it: a later nudge may get an empty reply
+
         tool_calls = assistant_msg.get("tool_calls")
         if not tool_calls:
             # No tool requested = the model wants to finish. Check the answer first.
-            content = assistant_msg.get("content", "")
             problem = check_final_answer(content, tools_used, rag_enabled, nudges_sent)
             if problem:
                 nudges_sent.add(problem)
@@ -217,6 +221,13 @@ def run_agent(question: str, tool_schemas: list = TOOL_SCHEMAS,
         log(assistant_msg)
         answer = assistant_msg.get("content", "")
         step += 1
+
+    # Bug found by eval run v1: the model answered correctly, a nudge followed,
+    # it replied with an empty message, and that empty message became the
+    # answer. A nudge must never make the result worse, so fall back to the
+    # last properly formatted answer.
+    if "ROOT CAUSE" not in (answer or "").upper() and best_answer:
+        answer = best_answer
 
     return {
         "answer": answer,
