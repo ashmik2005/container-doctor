@@ -1,6 +1,7 @@
 """The agent loop: ask the model, run the tools it requests, feed results back, repeat.
 
 Run:  .venv/bin/python agent.py "my web app is down"
+      .venv/bin/python agent.py --no-rag "my web app is down"   (without runbook search)
 """
 import json
 import sys
@@ -8,32 +9,53 @@ import time
 
 import ollama
 
-from tools import NEEDS_APPROVAL, TOOL_SCHEMAS, TOOLS
+from tools import NEEDS_APPROVAL, TOOL_SCHEMAS, TOOL_SCHEMAS_NO_RAG, TOOLS
 
 MODEL = "qwen2.5:3b"
 MAX_STEPS = 8                # max model calls; a confused small model can loop forever
 MAX_TOOL_OUTPUT_CHARS = 3000 # ~750 tokens; keeps one noisy tool from flooding the context
 NUM_CTX = 8192               # context window in tokens. Ollama's default is small and it
                              # silently drops the OLDEST messages (incl. the system prompt) when full.
+NUM_PREDICT = 1024           # max tokens the model may generate per call. Without it a small model
+                             # can fall into a repetition loop and generate for 15+ minutes (seen in testing).
 EVIDENCE_TOOLS = {"get_logs", "inspect_container"}  # must use one before answering
 
-SYSTEM_PROMPT = """You are Container Doctor, an expert at diagnosing broken Docker containers.
+SYSTEM_PROMPT_TEMPLATE = """You are Container Doctor, an expert at diagnosing broken Docker containers.
 Use the tools to gather evidence before answering. Typical approach:
 1. list_containers to see what exists and which containers are not healthy.
 2. get_logs on the broken container to find the error message.
 3. If logs are empty or unclear: inspect_container (exit code, State.Error, OOMKilled, health, mounts, env).
 4. If a container is running but unreachable: check_port. For space errors: check_disk.
-Call one tool at a time and use the exact container names from list_containers.
+{rag_step}Call one tool at a time and use the exact container names from list_containers.
 Never answer from the container list alone: confirm the cause with get_logs or inspect_container first.
 When you know the cause, reply WITHOUT calling a tool, in this format:
 ROOT CAUSE: <one sentence>
 EVIDENCE: <the log line or status that proves it>
 FIX: <concrete steps>"""
 
+RAG_STEP = ("5. Before your final answer, call search_runbooks once with the exact error "
+            "message or symptom you found; use the runbook to confirm the cause and write the fix.\n")
+
+
+def build_system_prompt(tool_schemas: list) -> str:
+    """Only mention search_runbooks when the tool is actually available."""
+    names = {s["function"]["name"] for s in tool_schemas}
+    return SYSTEM_PROMPT_TEMPLATE.format(rag_step=RAG_STEP if "search_runbooks" in names else "")
+
 
 def ask_human(name: str, args: dict) -> bool:
-    """Human-in-the-loop: the default approval function asks on the terminal."""
-    answer = input(f"\n>>> Agent wants to run {name}({json.dumps(args)}). Allow? [y/N] ")
+    """Human-in-the-loop: the default approval function asks on the terminal.
+
+    If nobody is at a terminal (piped/automated run), input() would block
+    forever, so we deny instead. Unsafe-by-default would be the wrong failure.
+    """
+    if not sys.stdin.isatty():
+        print(f"\n>>> {name}({json.dumps(args)}) needs approval, no terminal: DENIED")
+        return False
+    try:
+        answer = input(f"\n>>> Agent wants to run {name}({json.dumps(args)}). Allow? [y/N] ")
+    except EOFError:
+        return False
     return answer.strip().lower() == "y"
 
 
@@ -81,6 +103,31 @@ def execute_tool_call(name: str, args, approve) -> str:
         return f"ERROR: tool '{name}' failed: {type(e).__name__}: {e}"
 
 
+# Final-answer guards. The 3B model ignores these rules when they are only in
+# the prompt, so the loop enforces them. Each nudge is sent at most once per
+# run, so a stubborn model cannot get stuck in a nudge loop.
+NUDGES = {
+    "no_evidence": "You have not looked at logs or container details yet. Gather evidence "
+                   "with get_logs or inspect_container before giving your final answer.",
+    "no_runbook": "Before answering, call search_runbooks with the exact error message or "
+                  "symptom you found, and use the runbook to confirm the cause and the fix.",
+    "bad_format": "If you need more information, call a tool now. Otherwise give your final "
+                  "answer in the required format: ROOT CAUSE: ... EVIDENCE: ... FIX: ...",
+}
+
+
+def check_final_answer(content: str, tools_used: list, rag_enabled: bool,
+                       nudges_sent: set) -> str | None:
+    """Return the name of the first unmet rule (not yet nudged), or None if the answer is accepted."""
+    if "no_evidence" not in nudges_sent and not EVIDENCE_TOOLS & set(tools_used):
+        return "no_evidence"
+    if rag_enabled and "no_runbook" not in nudges_sent and "search_runbooks" not in tools_used:
+        return "no_runbook"
+    if "bad_format" not in nudges_sent and "ROOT CAUSE" not in content.upper():
+        return "bad_format"
+    return None
+
+
 def print_message(msg: dict) -> None:
     """Pretty-print one message so we can SEE the conversation the model sees."""
     print(f"\n----- {msg['role'].upper()} -----")
@@ -96,7 +143,7 @@ def call_model(messages: list, tools: list | None) -> dict:
         model=MODEL,
         messages=messages,
         tools=tools,
-        options={"temperature": 0, "num_ctx": NUM_CTX},  # temperature 0: repeatable runs
+        options={"temperature": 0, "num_ctx": NUM_CTX, "num_predict": NUM_PREDICT},  # temperature 0: repeatable runs
     )
     # Convert the pydantic Message object to a plain dict for printing/storing.
     return response.message.model_dump(exclude_none=True)
@@ -108,7 +155,7 @@ def run_agent(question: str, tool_schemas: list = TOOL_SCHEMAS,
     start = time.time()
     # The whole "memory" of the agent is this list. Every step we send ALL of it.
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt(tool_schemas)},
         {"role": "user", "content": question},
     ]
     def log(msg):
@@ -121,7 +168,8 @@ def run_agent(question: str, tool_schemas: list = TOOL_SCHEMAS,
     tools_used = []
     seen_calls = set()
     answer = None
-    nudged = False
+    nudges_sent = set()
+    rag_enabled = "search_runbooks" in {s["function"]["name"] for s in tool_schemas}
 
     for step in range(1, MAX_STEPS + 1):
         assistant_msg = call_model(messages, tool_schemas)
@@ -130,18 +178,16 @@ def run_agent(question: str, tool_schemas: list = TOOL_SCHEMAS,
 
         tool_calls = assistant_msg.get("tool_calls")
         if not tool_calls:
-            # Evidence guard: the 3B model ignores "confirm before answering" in the
-            # prompt, so we enforce it in code, once, to avoid an endless loop.
-            if not nudged and not EVIDENCE_TOOLS & set(tools_used):
-                nudged = True
-                nudge = {"role": "user", "content":
-                         "You have not looked at logs or container details yet. Gather evidence "
-                         "with get_logs or inspect_container before giving your final answer."}
+            # No tool requested = the model wants to finish. Check the answer first.
+            content = assistant_msg.get("content", "")
+            problem = check_final_answer(content, tools_used, rag_enabled, nudges_sent)
+            if problem:
+                nudges_sent.add(problem)
+                nudge = {"role": "user", "content": NUDGES[problem]}
                 messages.append(nudge)
                 log(nudge)
                 continue
-            # No tool requested = the model is giving its final answer.
-            answer = assistant_msg.get("content", "")
+            answer = content
             break
 
         # The model asked for one or more tools. WE execute them, not the model.
@@ -182,8 +228,12 @@ def run_agent(question: str, tool_schemas: list = TOOL_SCHEMAS,
 
 
 if __name__ == "__main__":
-    question = " ".join(sys.argv[1:]) or "Something is broken in my Docker setup. What is wrong?"
-    result = run_agent(question)
+    # usage: agent.py [--no-rag] "question"
+    args = sys.argv[1:]
+    use_rag = "--no-rag" not in args
+    question = " ".join(a for a in args if a != "--no-rag") or \
+        "Something is broken in my Docker setup. What is wrong?"
+    result = run_agent(question, TOOL_SCHEMAS if use_rag else TOOL_SCHEMAS_NO_RAG)
     print("\n===== FINAL ANSWER =====")
     print(result["answer"])
     print(f"\n({result['steps']} model calls, tools: {result['tools_used']}, {result['seconds']}s)")

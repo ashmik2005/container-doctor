@@ -186,6 +186,18 @@ def check_disk() -> str:
     )
 
 
+def search_runbooks(query: str) -> str:
+    """Semantic search over the runbook notes; returns the 2 best-matching runbooks."""
+    import rag  # imported here so the other tools work even without ChromaDB installed
+    if not isinstance(query, str) or not query.strip():
+        return "ERROR: query must be a non-empty string, e.g. an error message from the logs."
+    hits = rag.search(query, k=2)
+    if not hits:
+        return "No runbooks found. Run `python rag.py` to build the index."
+    return "\n\n".join(f"=== Runbook {h['source']} (similarity {h['similarity']}) ===\n{h['text']}"
+                       for h in hits)
+
+
 # --- Action tools (need human approval, enforced in agent.py) ---------------
 
 def restart_container(container: str) -> str:
@@ -203,6 +215,7 @@ TOOLS = {
     "check_port": check_port,
     "check_disk": check_disk,
     "restart_container": restart_container,
+    "search_runbooks": search_runbooks,
 }
 
 # Tools that change something. agent.py asks a human before running them.
@@ -255,4 +268,13 @@ TOOL_SCHEMAS = [
             "Restart a container. This CHANGES state and needs human approval. Only use it if a "
             "restart would actually fix the root cause; it does not fix configuration errors.",
             CONTAINER_ARG, ["container"]),
+    _schema("search_runbooks",
+            "Search the team's troubleshooting runbooks. Pass the exact error message or symptom "
+            "you found (e.g. \"exit code 137\" or \"Name does not resolve\"). Returns runbooks with "
+            "how to confirm the cause and how to fix it.",
+            {"query": {"type": "string", "description": "Error message or symptom to look up."}},
+            ["query"]),
 ]
+
+# Eval runs the agent with and without retrieval; same tools otherwise.
+TOOL_SCHEMAS_NO_RAG = [s for s in TOOL_SCHEMAS if s["function"]["name"] != "search_runbooks"]

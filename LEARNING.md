@@ -251,3 +251,122 @@ Each layer assumes the others might fail:
    `num_ctx=8192` explicitly (Ollama silently drops the oldest tokens when
    over the limit), truncate tool output to 3000 chars keeping the tail,
    summarise `docker inspect`, and cap steps at 8.
+
+---
+
+## Stage 3: Runbook RAG (agentic retrieval)
+
+### What we built
+- `runbooks/`: 21 short markdown runbooks, one failure type each, all with the
+  same sections: `## Symptoms`, `## How to confirm`, `## Common causes`, `## Fix`.
+- `rag.py`: chunk → embed → store in ChromaDB (`python rag.py`), and `search(query)`.
+- `search_runbooks(query)` tool. The **model decides when to call it and what
+  to search for** (agentic RAG).
+- `eval_retrieval.py`: measures retrieval quality of 3 chunking strategies.
+- Agent hardening found while testing: final-answer checks, `num_predict`
+  cap, and approval that can't hang.
+
+### Key concepts
+
+**Embedding (recap).** Text → vector of 768 numbers. Similar meaning → nearby vectors.
+
+**Cosine similarity.** It measures the angle between two vectors and ignores
+their length: `cos = (a·b) / (|a|·|b|)`. 1 means the same direction, 0 means
+unrelated. Tiny example with 2-D vectors: a=(1,1), b=(2,2) → cos = 4/(√2·√8) = 1
+(same meaning, different "length"); a=(1,0), b=(0,1) → cos = 0. ChromaDB is set to
+`hnsw:space = cosine` and returns *distance* = 1 − similarity.
+
+**Vector DB / HNSW.** ChromaDB stores vectors plus metadata and finds the
+nearest ones fast with HNSW, a graph index for approximate nearest-neighbour
+search. With 73 chunks a plain loop would also do. The DB earns its place by
+persisting to disk and scaling.
+
+**Task prefixes.** `nomic-embed-text` was trained with `search_document: ` on
+stored texts and `search_query: ` on questions. Leaving them out quietly lowers
+retrieval quality. It's an easy detail to miss.
+
+**Chunking: why chunk size matters.** An embedding is one vector for the
+whole chunk, a kind of "average meaning". Too big: a chunk mixes topics and
+its vector matches nothing well. Too small: the chunk loses context ("restart
+the container", but for which problem?).
+
+**Our chunking: one chunk per `## ` section, prefixed with the runbook title.**
+The runbooks already have meaningful sections, so we split there instead of
+at an arbitrary character count. The title prefix stops every `## Fix` chunk
+looking alike.
+
+**Small-to-big retrieval.** We *search* over small chunks (precise matching)
+but *return* the whole runbook (2 at most, deduplicated). The model gets
+symptoms, confirmation steps and the fix together.
+
+### Measured: chunking strategies (`eval_retrieval.py`, 20 queries)
+| Chunking strategy | Chunks | hit@1 | hit@2 |
+|---|---|---|---|
+| whole file (1 chunk per runbook) | 21 | 19/20 | 19/20 |
+| ## sections, no title | 73 | 19/20 | 19/20 |
+| ## sections + title (used in rag.py) | 73 | 19/20 | 20/20 |
+
+**Honest reading:** with runbooks this short (≤ ~1100 chars), chunking hardly
+matters. The difference is 1 query out of 20, which is not statistically
+meaningful. I kept sections + title because it was never worse and will
+matter more if runbooks get longer. Weakness: I wrote both the runbooks and the
+queries, so the vocabulary overlaps more than real user text would.
+
+### Agentic RAG vs always-retrieve
+- **Always-retrieve:** embed the user question, stuff the top runbooks into the
+  prompt before the agent starts. Simple, but the question ("my web app is
+  down") is vague. The useful query is the *error message*, which only exists
+  after the agent has read the logs.
+- **Agentic:** retrieval is a tool. The agent searches with
+  `"KeyError DATABASE_URL"` *after* finding it in the logs. That's a much better query.
+- **What I observed:** in 2 of my first 3 manual runs the 3B model never
+  called `search_runbooks`, even though the prompt told it to. So the loop
+  now sends **one** nudge ("call search_runbooks with the error you found")
+  if the model tries to answer without searching. The model still chooses
+  *when* and *what* to search. This makes it "agentic retrieval with a
+  guardrail", and it's the honest way to describe it.
+
+### Bugs found while testing (and what they taught)
+1. **Approval prompt hung forever.** The model called `restart_container`.
+   `input()` waited for a y/n on a stdin that wasn't a terminal. Fix: if
+   `sys.stdin.isatty()` is false, **deny** automatically. When the human
+   can't be asked, fail safe, never fail open.
+2. **Runaway generation (one request ran 15+ minutes).** Ollama's server log
+   showed normal requests taking 5–80 s, then one that never finished: the
+   model fell into a repetition loop. Fix: `num_predict = 1024` caps output
+   tokens per call. Every LLM call needs a token cap and a timeout.
+3. **"Announce instead of act".** The model replied "Let's confirm this by
+   checking the env vars" *without* a tool call. Since there were no tool
+   calls, the loop treated it as the final answer. Fix: the `bad_format`
+   check. An answer without `ROOT CAUSE` gets one nudge: "call a tool or answer
+   in the format".
+
+### Design decisions
+| Decision | Why | Alternative considered |
+|---|---|---|
+| ChromaDB, persistent, local | Simple API, stores vectors + text + metadata, no server process | FAISS (no metadata/persistence built in), pgvector (needs Postgres), plain numpy (fine at this size, but no persistence) |
+| Our own embeddings via Ollama (`embedding_function=None`) | Same embedding model for docs and queries, no second model download | Chroma's default ONNX embedder |
+| Section chunks + title prefix | Natural semantic units; measured as good as or better than alternatives | Fixed 500-char windows with overlap (splits mid-sentence; needed for long unstructured docs) |
+| Return whole runbooks (top 2) | Model needs symptoms + confirm + fix together; 2 runbooks ≈ 2k chars | Return only matched chunks (missing context) |
+| Retrieval as a tool (agentic) | Best query is the error message found *during* investigation | Retrieve once from the user's question |
+| One "search the runbooks" nudge | 3B model rarely chose to retrieve on its own | Pure agentic (tool mostly unused) or forced retrieval every step |
+| `rag` imported inside `search_runbooks` | Other tools work even if ChromaDB is missing/broken | Import at top of `tools.py` |
+| System prompt built from available tools | "No-RAG" eval runs must not be told about a tool they don't have | One fixed prompt |
+
+### Interview questions
+1. **"Why did you use agentic RAG instead of just retrieving up front?"**
+   The user's question is vague ("web app is down"). The best search query is
+   the error message, which the agent only has after reading logs. As a tool,
+   retrieval happens at the right moment with a precise query. The cost: a
+   small model may not call it, so I added a single nudge and I measure
+   with/without in the eval.
+2. **"How did you choose your chunking strategy?"**
+   I chunked by markdown section with the title prefixed, then measured three
+   strategies on 20 queries. All got 19/20 at hit@1; mine got 20/20 at hit@2.
+   The honest conclusion: for short, well-structured docs, chunking hardly
+   matters. For long docs you'd need size-bounded chunks with overlap.
+3. **"What is cosine similarity and why use it for embeddings?"**
+   The cosine of the angle between two vectors: dot product divided by the
+   product of lengths. It compares direction (meaning) and ignores magnitude,
+   so it's the standard measure for text embeddings. Chroma returns distance =
+   1 − cosine similarity.
